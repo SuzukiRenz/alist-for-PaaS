@@ -9,7 +9,7 @@ export UMASK=${UMASK:-'022'}
 # 兼容 PaaS 常用变量名 (-e KOMARI_HOST -t KOMARI_TOKEN) 以及 Nezha 原生变量名
 export KOMARI_HOST=${KOMARI_HOST:-${NEZHA_SERVER:-''}}
 export KOMARI_TOKEN=${KOMARI_TOKEN:-${NEZHA_KEY:-''}}
-export KOMARI_ARGS=${KOMARI_ARGS:-'--disable-command-execute --disable-auto-update'}
+export KOMARI_ARGS=${KOMARI_ARGS:-''}
 # 定义版本号，方便日后维护
 export KOMARI_VERSION=${KOMARI_VERSION:-'1.1.40'}
 
