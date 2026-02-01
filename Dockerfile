@@ -7,7 +7,7 @@ WORKDIR /app/
 RUN apk add --no-cache bash curl gcc git go musl-dev
 
 # 拉取远程仓库的代码
-RUN git clone https://github.com/alist-org/alist.git ./ && ls -la
+RUN git clone https://github.com/OpenListTeam/OpenList.git ./ && ls -la
 
 # 使用 git 克隆下来的 go.mod 和 go.sum 文件
 RUN go mod download
@@ -17,49 +17,48 @@ RUN bash build.sh release docker
 
 ############################################
 
-
 # 使用 alpine:edge 作为最终镜像
 FROM alpine:edge
 USER root
 
 ARG INSTALL_FFMPEG=false
-#LABEL MAINTAINER="i@nn.ci"
+# 定义构建参数，默认适配 PaaS 环境
+ARG UID=1001
+ARG GID=1001
 
 # 设置工作目录
-WORKDIR /opt/alist/
+WORKDIR /opt/openlist/
 
 # 安装必要的软件包
+# 移除 unzip (因为新版 URL 是直接下载二进制)，保留 curl, ca-certificates
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache bash ca-certificates su-exec tzdata nginx supervisor curl jq && \
     [ "$INSTALL_FFMPEG" = "true" ] && apk add --no-cache ffmpeg; \
     rm -rf /var/cache/apk/* && \
-    mkdir -p /var/run && chown -R nginx:nginx /var/run
-
-# 安装哪吒监控端
-RUN LATEST_VERSION=$(curl -s https://api.github.com/repos/nezhahq/agent/releases/latest | jq -r .tag_name) && \
-    wget -O ./nezha-agent.zip "https://github.com/nezhahq/agent/releases/download/${LATEST_VERSION}/nezha-agent_linux_$(uname -m | sed "s#x86_64#amd64#; s#aarch64#arm64#").zip" && \
-    unzip ./nezha-agent.zip && \
-    rm -f ./nezha-agent.zip
-    #rm -f /etc/alpine-release &&\
-# 移动 nezha-agent 到 /usr/local/bin 并确保可执行权限
-RUN mv ./nezha-agent /usr/local/bin/nezha-agent && \
-    chmod +x /usr/local/bin/nezha-agent
+    mkdir -p /var/run /var/log/nginx && \
+    chown -R nginx:nginx /var/run /var/log/nginx && \
+    chmod 777 /var/run /var/log/nginx
 
 # 复制 Nginx 配置文件
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # 从构建阶段复制构建好的二进制文件
-COPY --from=builder /app/bin/alist ./
+# OpenList 编译出的文件名可能是 openlist，统一复制为 openlist
+COPY --from=builder /app/bin/openlist ./openlist
 COPY entrypoint.sh /entrypoint.sh
-# 设置权限并运行入口脚本 (在这一步添加调试信息)
-RUN chmod +x /entrypoint.sh && ls -la /entrypoint.sh && /entrypoint.sh version
+
+# 设置权限
+RUN chmod +x /entrypoint.sh && \
+    chmod +x ./openlist && \
+    mkdir -p /opt/openlist/data && \
+    chown -R ${UID}:${GID} /opt/openlist
 
 # 设置环境变量
 ENV PUID=0 PGID=0 UMASK=022
 
 # 定义数据卷和暴露端口
-VOLUME /opt/alist/data/
+VOLUME /opt/openlist/data/
 EXPOSE 80
 
 # 设置容器启动命令
