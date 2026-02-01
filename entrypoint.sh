@@ -152,7 +152,7 @@ if [ $? -eq 0 ] && [ -f "$AGENT_BIN" ]; then
 
 [program:komari-agent]
 directory=${AGENT_DIR}
-command=${AGENT_BIN} -s ${SAFE_HOST} -p ${KOMARI_TOKEN} ${TLS_FLAG} ${KOMARI_ARGS}
+command=${AGENT_BIN} -e ${SAFE_HOST} -t ${KOMARI_TOKEN} ${TLS_FLAG} ${KOMARI_ARGS}
 autorestart=true
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
