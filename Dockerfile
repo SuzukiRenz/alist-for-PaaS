@@ -4,7 +4,7 @@ LABEL stage=go-builder
 WORKDIR /app/
 
 # 安装必要的软件包
-RUN apk add --no-cache bash curl gcc git go musl-dev
+RUN apk add --no-cache bash curl jq gcc git go musl-dev
 
 # 拉取远程仓库的代码
 RUN git clone https://github.com/OpenListTeam/OpenList.git ./ && ls -la
@@ -62,4 +62,5 @@ VOLUME /opt/openlist/data/
 EXPOSE 80
 
 # 设置容器启动命令
+
 CMD [ "/entrypoint.sh" ]
