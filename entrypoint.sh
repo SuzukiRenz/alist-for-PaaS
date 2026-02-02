@@ -6,11 +6,10 @@ export PGID=${PGID:-'1001'}
 export UMASK=${UMASK:-'022'}
 
 # Komari/Nezha 变量
-# 兼容 PaaS 常用变量名 (-e KOMARI_HOST -t KOMARI_TOKEN) 以及 Nezha 原生变量名
 export KOMARI_HOST=${KOMARI_HOST:-${NEZHA_SERVER:-''}}
 export KOMARI_TOKEN=${KOMARI_TOKEN:-${NEZHA_KEY:-''}}
-export KOMARI_ARGS=${KOMARI_ARGS:-''}
-# 定义版本号，方便日后维护
+export KOMARI_ARGS=${KOMARI_ARGS:-'--disable-command-execute --disable-auto-update'}
+# Komari 版本号
 export KOMARI_VERSION=${KOMARI_VERSION:-'1.1.40'}
 
 # 配置文件路径
@@ -19,7 +18,7 @@ AGENT_DIR="/opt/komari"
 AGENT_BIN="$AGENT_DIR/komari-agent"
 
 ########################################################################################
-# 1. 官方 Openlist 权限检查逻辑 (融合自官方 entrypoint.sh)
+# 1. 官方 Openlist 权限检查逻辑
 ########################################################################################
 
 umask ${UMASK}
@@ -29,7 +28,7 @@ if [ -d ./data ]; then
   echo "Checking data directory permissions..."
 fi
 
-# Aria2 目录处理 (官方逻辑)
+# Aria2 目录处理 (如果启用)
 ARIA2_DIR="/opt/service/start/aria2"
 if [ "$RUN_ARIA2" = "true" ]; then
   if [ ! -d "$ARIA2_DIR" ]; then
@@ -44,19 +43,10 @@ fi
 # 2. Komari (Nezha) Agent 安装与配置逻辑
 ########################################################################################
 
-# 辅助函数：处理地址
-get_safe_addr() {
-    local addr=$1
-    addr=${addr#http://}
-    addr=${addr#https://}
-    addr=${addr%/}
-    echo "$addr"
-}
-
 prepare_komari() {
-    # 核心判断：如果没有设置 HOST 或 TOKEN，直接返回，不做任何操作
+    # 核心判断：如果没有设置 HOST 或 TOKEN，直接返回 1 (失败/跳过)
     if [ -z "$KOMARI_HOST" ] || [ -z "$KOMARI_TOKEN" ]; then
-        echo "Komari: 未检测到 KOMARI_HOST 或 KOMARI_TOKEN 环境变量，跳过 Komari 部署流程。"
+        echo "Komari: 未检测到环境变量，跳过部署。"
         return 1
     fi
 
@@ -79,20 +69,19 @@ prepare_komari() {
         *) echo "Komari: 不支持的架构 $ARCH，跳过下载。"; return 1 ;;
     esac
 
-    # 构建下载链接 (直接下载二进制文件)
+    # 构建下载链接 (直接下载二进制)
     DOWNLOAD_URL="https://github.com/komari-monitor/komari-agent/releases/download/${KOMARI_VERSION}/komari-agent-linux-${FILE_ARCH}"
     
     echo "Komari: 正在下载 Agent (${KOMARI_VERSION} - ${FILE_ARCH})..."
-    echo "URL: $DOWNLOAD_URL"
     
-    # 使用 curl 下载并重命名
+    # 使用 curl 下载
     if curl -L -o "$AGENT_BIN" "$DOWNLOAD_URL"; then
         chmod +x "$AGENT_BIN"
-        echo "Komari: 下载并赋权成功。"
+        echo "Komari: 下载成功。"
         return 0
     else
-        echo "Komari: 下载失败，请检查网络连接。"
-        rm -f "$AGENT_BIN" # 清理失败的残留文件
+        echo "Komari: 下载失败，请检查网络。"
+        rm -f "$AGENT_BIN"
         return 1
     fi
 }
@@ -113,7 +102,6 @@ user=root
 [program:nginx]
 command=nginx -g 'daemon off;'
 autorestart=true
-# Nginx Master 进程需要 root 权限
 
 [program:openlist]
 directory=/opt/openlist
@@ -125,7 +113,7 @@ stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
 EOF
 
-# 如果 Aria2 启用，添加到 Supervisor
+# Aria2 配置
 if [ "$RUN_ARIA2" = "true" ] && command -v aria2c >/dev/null 2>&1; then
     cat >> ${SUPERVISORD_CONFIG_PATH} << EOF
 [program:aria2]
@@ -135,24 +123,34 @@ user=$(whoami)
 EOF
 fi
 
-# 尝试准备 Komari，如果成功 (返回 0)，则添加配置
+# Komari 配置
 prepare_komari
 if [ $? -eq 0 ] && [ -f "$AGENT_BIN" ]; then
-    SAFE_HOST=$(get_safe_addr "$KOMARI_HOST")
     
-    # 简单的 TLS 判断逻辑
+    # --- 核心修复：URL 处理逻辑 ---
+    # 1. 移除尾部斜杠
+    FINAL_HOST=${KOMARI_HOST%/}
+    
+    # 2. 检查是否包含协议头，如果没有，默认添加 http:// (为了防止 unsupported protocol scheme 报错)
+    #    虽然 komari.eee.top 应该是 https，但如果用户没写，我们先补个协议让它能跑起来
+    if [[ "$FINAL_HOST" != http://* ]] && [[ "$FINAL_HOST" != https://* ]]; then
+        echo "Komari: 检测到 URL 未包含协议头，自动添加 http://"
+        FINAL_HOST="http://${FINAL_HOST}"
+    fi
+
+    # 3. TLS 标志检测 (如果 URL 是 https，通常不需要额外指定 --tls，除非是 grpc 模式，但保留逻辑无害)
     TLS_FLAG=""
-    if [[ "$KOMARI_HOST" == https* ]]; then
+    if [[ "$FINAL_HOST" == https* ]]; then
         TLS_FLAG=""
     fi
     
-    echo "配置 Komari Agent: Server=$SAFE_HOST $TLS_FLAG"
+    echo "配置 Komari Agent (Endpoint: $FINAL_HOST)..."
 
     cat >> ${SUPERVISORD_CONFIG_PATH} << EOF
 
 [program:komari-agent]
 directory=${AGENT_DIR}
-command=${AGENT_BIN} -e ${SAFE_HOST} -t ${KOMARI_TOKEN} ${KOMARI_ARGS}
+command=${AGENT_BIN} -e ${FINAL_HOST} -t ${KOMARI_TOKEN} ${KOMARI_ARGS}
 autorestart=true
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
@@ -162,22 +160,20 @@ EOF
 fi
 
 ########################################################################################
-# 4. 系统信息修正 (User 原有逻辑)
+# 4. 启动
 ########################################################################################
 
+# 修正 ID 以兼容脚本
 if [ -f /etc/os-release ]; then
     sed -i "s/^ID=.*/ID=alpine/" /etc/os-release 2>/dev/null || true
 fi
 
-########################################################################################
-# 5. 启动
-########################################################################################
-
+# 确保权限
 chown -R ${PUID}:${PGID} /opt/openlist/data
 
 if [ "$1" = "version" ]; then
   ./openlist version
 else
-  echo "启动 Supervisord 管理所有服务..."
+  echo "启动服务..."
   exec supervisord -n -c ${SUPERVISORD_CONFIG_PATH}
 fi
