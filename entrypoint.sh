@@ -143,7 +143,7 @@ if [ $? -eq 0 ] && [ -f "$AGENT_BIN" ]; then
     # 简单的 TLS 判断逻辑
     TLS_FLAG=""
     if [[ "$KOMARI_HOST" == https* ]]; then
-        TLS_FLAG="--tls"
+        TLS_FLAG=""
     fi
     
     echo "配置 Komari Agent: Server=$SAFE_HOST $TLS_FLAG"
@@ -152,7 +152,7 @@ if [ $? -eq 0 ] && [ -f "$AGENT_BIN" ]; then
 
 [program:komari-agent]
 directory=${AGENT_DIR}
-command=${AGENT_BIN} -e ${SAFE_HOST} -t ${KOMARI_TOKEN} ${TLS_FLAG} ${KOMARI_ARGS}
+command=${AGENT_BIN} -e ${SAFE_HOST} -t ${KOMARI_TOKEN} ${KOMARI_ARGS}
 autorestart=true
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
