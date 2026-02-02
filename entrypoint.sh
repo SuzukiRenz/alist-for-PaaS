@@ -8,7 +8,7 @@ export UMASK=${UMASK:-'022'}
 # Komari/Nezha 变量
 export KOMARI_HOST=${KOMARI_HOST:-${NEZHA_SERVER:-''}}
 export KOMARI_TOKEN=${KOMARI_TOKEN:-${NEZHA_KEY:-''}}
-export KOMARI_ARGS=${KOMARI_ARGS:-'--disable-command-execute --disable-auto-update'}
+export KOMARI_ARGS=${KOMARI_ARGS:-''}
 # Komari 版本号
 export KOMARI_VERSION=${KOMARI_VERSION:-'1.1.40'}
 
